@@ -26,10 +26,10 @@ jobs:
 
       - name: Backup Releases for Multiple Repositories
         env:
-          # 仓库列表，每个仓库可以是一个 GitHub 仓库名（例如：owner/repo）
           REPOS: "comfyanonymous/ComfyUI"  # 示例仓库列表
           TARGET_BRANCH: 'ain'
           BACKUP_DIR: 'release-backups'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # GitHub Actions 自动提供的 token
         run: |
           # 创建备份目录
           mkdir -p ${BACKUP_DIR}
@@ -73,6 +73,41 @@ jobs:
             else
               echo "No new releases for $REPO, skipping backup."
             fi
+          done
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 获取当前日期，作为新的 release 标签
+          TAG="backup-$(date +'%Y-%m-%d')"
+          
+          # 创建一个新的 GitHub release
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{
+                  "tag_name": "'$TAG'",
+                  "name": "Backup for '$TAG'",
+                  "body": "Automated backup of release assets for the week.",
+                  "draft": false,
+                  "prerelease": false
+                }' \
+            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases)
+
+          # 获取上传的 release ID
+          RELEASE_ID=$(echo $RESPONSE | jq -r '.id')
+
+          # 上传备份文件到新的 release
+          for REPO in $REPOS; do
+            for FILE in ${BACKUP_DIR}/${REPO}/*; do
+              echo "Uploading $FILE to release..."
+              curl -s -X POST \
+                -H "Authorization: token ${GITHUB_TOKEN}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary @"$FILE" \
+                "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$RELEASE_ID/assets?name=$(basename $FILE)"
+            done
           done
 
       - name: Cleanup
