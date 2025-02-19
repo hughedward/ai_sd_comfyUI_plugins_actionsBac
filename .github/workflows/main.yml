@@ -1,0 +1,81 @@
+name: Backup Releases
+
+on:
+  schedule:
+    - cron: 0 0 * * 0 # 每周日凌晨运行一次
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Install dependencies
+        run: |
+          # 安装 jq 工具用于解析 JSON
+          sudo apt-get install -y jq
+
+      - name: Backup Releases for Multiple Repositories
+        env:
+          # 仓库列表，每个仓库可以是一个 GitHub 仓库名（例如：owner/repo）
+          REPOS: "comfyanonymous/ComfyUI"  # 示例仓库列表
+          TARGET_BRANCH: 'ain'
+          BACKUP_DIR: 'release-backups'
+        run: |
+          # 创建备份目录
+          mkdir -p ${BACKUP_DIR}
+
+          # 遍历仓库列表
+          for REPO in $REPOS; do
+            echo "Backing up releases for $REPO..."
+
+            # 获取目标仓库的发布列表
+            RELEASES=$(curl -s -X GET \
+              https://api.github.com/repos/${REPO}/releases \
+              -H 'Accept: application/vnd.github.v3+json' \
+            )
+
+            # 获取最新的发布版本 ID
+            LATEST_RELEASE=$(echo "$RELEASES" | jq -r '.[0].id')
+
+            # 检查上次备份的版本
+            LAST_BACKUP_RELEASE=$(cat ${BACKUP_DIR}/last_backup_release_${REPO}.txt || echo "none")
+
+            # 如果有新版本发布，则开始下载
+            if [ "$LATEST_RELEASE" != "$LAST_BACKUP_RELEASE" ]; then
+              echo "New release found for $REPO, starting backup..."
+
+              # 遍历发布并下载资产
+              echo "$RELEASES" | jq -c '.[] | .assets[] | .name + " " + .browser_download_url' | while read -r NAME URL; do
+                curl -s -L -o "${BACKUP_DIR}/${REPO}/${NAME}" "${URL}"
+                echo "Downloaded ${NAME} from $REPO"
+              done
+
+              # 提交备份文件
+              git config --global user.name 'github-actions[bot]'
+              git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+              git add ${BACKUP_DIR}/${REPO}/*
+              git diff --cached --quiet || git commit -m "Automated backup of releases for $REPO"
+              git push origin ${TARGET_BRANCH} || echo "No changes to push for $REPO"
+
+              # 更新备份的版本 ID
+              echo "$LATEST_RELEASE" > ${BACKUP_DIR}/last_backup_release_${REPO}.txt
+            else
+              echo "No new releases for $REPO, skipping backup."
+            fi
+          done
+
+      - name: Cleanup
+        run: |
+          # 清理步骤
+          rm -rf ${BACKUP_DIR}
