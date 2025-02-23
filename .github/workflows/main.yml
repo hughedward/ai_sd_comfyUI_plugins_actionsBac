@@ -48,7 +48,8 @@ jobs:
             LATEST_RELEASE=$(echo "$RELEASES" | jq -r '.[0].id')
 
             # 检查上次备份的版本
-            LAST_BACKUP_RELEASE=$(cat ${BACKUP_DIR}/last_backup_release_${REPO}.txt || echo "none")
+            LAST_BACKUP_FILE="${BACKUP_DIR}/last_backup_release_${REPO//\//_}.txt"
+            LAST_BACKUP_RELEASE=$(if [ -f "$LAST_BACKUP_FILE" ]; then cat "$LAST_BACKUP_FILE"; else echo "none"; fi)
 
             # 如果有新版本发布，则开始下载
             if [ "$LATEST_RELEASE" != "$LAST_BACKUP_RELEASE" ]; then
