@@ -45,7 +45,8 @@ jobs:
             )
 
             # 获取最新的发布版本 ID
-            LATEST_RELEASE=$(echo "$RELEASES" | jq -r '.[0].id')
+            # LATEST_RELEASE=$(echo "$RELEASES" | jq -r '.[0].id')
+            LATEST_RELEASE=$(echo "$RELEASES" | grep -o '"id": [0-9]*' | awk '{print $2}' | head -n 1)
 
             # 检查上次备份的版本
             LAST_BACKUP_FILE="${BACKUP_DIR}/last_backup_release_${REPO//\//_}.txt"
